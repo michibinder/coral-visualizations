@@ -29,6 +29,14 @@ import filter, cmaps
 plt.style.use('latex_default.mplstyle')
 
 
+def timelab_format_func(value, tick_number):
+    dt = mdates.num2date(value)
+    if dt.hour == 0:
+        return "{}\n{}".format(dt.strftime("%Y-%b-%d"), dt.strftime("%H"))
+    else:
+        return dt.strftime("%H")
+
+
 def plot_lidar_filter(CONFIG_FILE):
     """Visualize lidar measurements (time-height diagrams + absolute temperature measurements)"""
     
@@ -41,15 +49,13 @@ def plot_lidar_filter(CONFIG_FILE):
     else:
         obs_list = os.path.join(config.get("INPUT","OBS_FOLDER"), config.get("INPUT","OBS_FILE"))
     
-    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),"filter1"), exist_ok=True)
+    folder = "filter1D"
+    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),folder), exist_ok=True)
     zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
     trange = eval(config.get("GENERAL","TRANGE"))
     
     ii = 0
     for obs in obs_list:
-        if (ii % 50) == 0:
-            print("Plotting measurement: {}".format(ii))
-
         file_name = os.path.split(obs)[-1]
         ds = xr.open_dataset(obs, decode_times=False)
 
@@ -136,7 +142,8 @@ def plot_lidar_filter(CONFIG_FILE):
         axes[3,1].axis('off')
 
         h_fmt      = mdates.DateFormatter('%H')
-        h_interv   = mdates.HourLocator(interval = 2)
+        
+        hlocator   = mdates.HourLocator(byhour=range(0,24,2))
         filter_str =['Filter: Temp-mean','Filter: 15km-BW','Filter: 20km-BW']
         for k in range(0,3):
             ax_lid = axes[k,0]
@@ -159,9 +166,10 @@ def plot_lidar_filter(CONFIG_FILE):
                                 cmap=cmap, norm=norm)
 
             ax_lid.set_xlim(ds['date_startp'],ds['date_endp'])
-            ax_lid.xaxis.set_major_locator(h_interv)
+            # ax_lid.xaxis.set_major_formatter(h_fmt)
+            ax_lid.xaxis.set_major_formatter(plt.FuncFormatter(timelab_format_func))
+            ax_lid.xaxis.set_major_locator(hlocator)
             ax_lid.yaxis.set_major_locator(MultipleLocator(10))
-            ax_lid.xaxis.set_major_formatter(h_fmt)
             ax_lid.yaxis.set_minor_locator(AutoMinorLocator()) 
             ax_lid.xaxis.set_minor_locator(AutoMinorLocator())
             ax_lid.xaxis.set_label_position('top')
@@ -170,6 +178,14 @@ def plot_lidar_filter(CONFIG_FILE):
             else:
                 ax_lid.tick_params(which='both', labelbottom=False,labeltop=False)
             ax_lid.set_ylabel('altitude / km')
+
+            # time_labels = ax_lid.get_xticklabels()
+            # print(time_labels)
+            # for ll,label in enumerate(time_labels):
+            #     if label == "00":
+            #         time_labels[ll] = ""
+                    
+            # ax_lid.set_xticklabels(time_labels)
 
             ypp = 0.96
             ax_lid.text(0.03, ypp, filter_str[k], transform=ax_lid.transAxes, verticalalignment='top', bbox={"boxstyle" : "round", "lw":0.67, "facecolor":"white", "edgecolor":"black"})
@@ -239,7 +255,8 @@ def plot_lidar_filter(CONFIG_FILE):
         
         # - Use date of first measurement - #
         date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-        axes[0,0].set_xlabel('hours (UTC) starting on {}'.format(datetime.datetime.strftime(date, '%b %d, %Y')))  
+        # axes[0,0].set_xlabel('hours (UTC) starting on {}'.format(datetime.datetime.strftime(date, '%b %d, %Y')))  
+        axes[0,0].text(-0.025, 1.014, "UTC", horizontalalignment='right', verticalalignment='bottom', transform=axes[0,0].transAxes)
 
         if ds.instrument_name == "":
             ds.instrument_name = "LIDAR"
@@ -263,9 +280,11 @@ def plot_lidar_filter(CONFIG_FILE):
             duration_str = duration_str + str(int(minutes))
         duration_str = duration_str + 'min'
         fig_name = file_name[:14] + duration_str + '.png'
-        fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),"filter1",fig_name), facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
+        fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),folder,fig_name), facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
 
-        ii += 1 
+        if (ii % 50) == 0:
+            print("Plotted measurement: {}".format(ii))
+        ii += 1
     return
 
 

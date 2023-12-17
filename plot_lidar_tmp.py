@@ -29,6 +29,14 @@ import filter, cmaps
 plt.style.use('latex_default.mplstyle')
 
 
+def timelab_format_func(value, tick_number):
+    dt = mdates.num2date(value)
+    if dt.hour == 0:
+        return "{}\n{}".format(dt.strftime("%Y-%b-%d"), dt.strftime("%H"))
+    else:
+        return dt.strftime("%H")
+
+        
 def plot_lidar_tmp(CONFIG_FILE):
     """Visualize lidar measurements (time-height diagrams + absolute temperature measurements)"""
     
