@@ -49,6 +49,8 @@ def plot_lidar_filter(CONFIG_FILE):
     else:
         obs_list = os.path.join(config.get("INPUT","OBS_FOLDER"), config.get("INPUT","OBS_FILE"))
     
+    config["OUTPUT"]["ERA5-FOLDER"] = os.path.join(config.get("OUTPUT","FOLDER"),"era5-profiles")
+
     folder = "filter1D"
     os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),folder), exist_ok=True)
     zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
@@ -124,7 +126,7 @@ def plot_lidar_filter(CONFIG_FILE):
         ds.temperature.values = np.where(ds.temperature == 0, np.nan, ds.temperature)
         ds.temperature_err.values = np.where(ds.temperature_err == 0, np.nan, ds.temperature_err)
 
-        """Data for plotting"""
+        """Measurement data for plot"""
         ds['alt_plot'] = (ds.altitude + ds.altitude_offset + ds.station_height) / 1000 #km
         vert_res       = (ds['alt_plot'][1]-ds['alt_plot'][0]).values[0]
         tprime_bwf20, tbg20 = filter.butterworth_filter(ds["temperature"].values, highcut=1/20, fs=1/vert_res, order=5, mode='low')
@@ -134,7 +136,18 @@ def plot_lidar_filter(CONFIG_FILE):
         #meanT = ds["temperature"].mean(dim='time')
         tprime_temp  = (ds["temperature"]-ds["temperature"].mean(dim='time')).values
 
-        vars = [tprime_temp, tprime_bwf15, tprime_bwf20]
+        vars = [tprime_temp,tprime_temp, tprime_bwf15]
+
+        """ERA5 data for plot"""
+        era5_file_path = os.path.join(config["OUTPUT"]["ERA5-FOLDER"], file_name[0:13] + "-ml-int.nc")
+        plot_era5 = False
+        if os.path.exists(era5_file_path):
+            ds_era5 = xr.open_dataset(era5_file_path)
+            ds_era5 = ds_era5.sel(latitude=-53.75,longitude=292.25) # method='nearest'
+            tprime_era5_T21 = ds_era5['tprime'].values.T
+            plot_era5 = True
+            print("Plotting ERA5...")
+
         """Figure"""
         gskw = {'hspace':0.04, 'wspace':0.03, 'width_ratios': [4,2], 'height_ratios': [5,5,5,1]} #  , 'width_ratios': [5,5]}
         fig, axes = plt.subplots(4,2, figsize=(7,12), sharey=True, gridspec_kw=gskw)
@@ -144,25 +157,26 @@ def plot_lidar_filter(CONFIG_FILE):
         h_fmt      = mdates.DateFormatter('%H')
         
         hlocator   = mdates.HourLocator(byhour=range(0,24,2))
-        filter_str =['Filter: Temp-mean','Filter: 15km-BW','Filter: 20km-BW']
+        filter_str =['T-T$_{T21}$ (ERA5)','T-T$_{tmean}$','T$_{BW:15km}$']
+        
+        clev = [-32,-16,-8,-4,-2,-1,-0.5,0.5,1,2,4,8,16,32] # 32
+        clev_l = [-16,-4,-1,1,4,16]
+        cmap = cmaps.get_wave_cmap()
+        norm = BoundaryNorm(boundaries=clev, ncolors=cmap.N, clip=True)
+
         for k in range(0,3):
             ax_lid = axes[k,0]
             ax0    = axes[k,1]
+            
             if k==0:
-                clev = [-32,-16,-8,-4,-2,-1,-0.5,0.5,1,2,4,8,16,32] # 32
-                clev_l = [-16,-4,-1,1,4,16]
-                cmap = cmaps.get_wave_cmap()
-            elif k==1:
-                clev = [-32,-16,-8,-4,-2,-1,-0.5,0.5,1,2,4,8,16,32] # 32
-                clev_l = [-16,-4,-1,1,4,16]
-                cmap = cmaps.get_wave_cmap()
-            elif k==2:
-                clev = [-32,-16,-8,-4,-2,-1,-0.5,0.5,1,2,4,8,16,32] # 32
-                clev_l = [-16,-4,-1,1,4,16]
-                cmap = cmaps.get_wave_cmap()
+                if plot_era5:
+                    pcolor0 = ax_lid.pcolormesh(ds_era5['time'].values, ds_era5['level']/1000, tprime_era5_T21,
+                                    cmap=cmap, norm=norm)
+                else:
+                    ax_lid.text(0.5, 0.5, "No ERA5 data", transform=ax_lid.transAxes, horizontalalignment='center', verticalalignment='center', bbox={"boxstyle" : "round", "lw":0.67, "facecolor":"white", "edgecolor":"black"})
 
-            norm = BoundaryNorm(boundaries=clev, ncolors=cmap.N, clip=True)
-            pcolor0 = ax_lid.pcolormesh(ds.time.values, ds.alt_plot.values, np.matrix.transpose(vars[k]),
+            else:
+                pcolor0 = ax_lid.pcolormesh(ds.time.values, ds.alt_plot.values, np.matrix.transpose(vars[k]),
                                 cmap=cmap, norm=norm)
 
             ax_lid.set_xlim(ds['date_startp'],ds['date_endp'])
@@ -227,11 +241,19 @@ def plot_lidar_filter(CONFIG_FILE):
             else:
                 ax1.tick_params(labelbottom=False, colors='red')
             
-            for t in range(0,np.shape(ds['temperature'])[0],4):      
-                ax0.plot(ds["temperature"][t],ds['alt_plot'],lw=lw_thin,color='black')
-                ax1.plot(vars[k][t],ds['alt_plot'],lw=lw_thin,color='red')
-            ax0.plot(np.mean(ds["temperature"],axis=0),ds['alt_plot'],lw=lw_thick,color='black')
-            ax1.plot(np.nanmean(vars[k],axis=0),ds['alt_plot'], lw=lw_thick, color='red')
+            if k==0 and plot_era5:
+                if plot_era5:
+                    for t in range(0,np.shape(ds_era5['temperature'])[0]):      
+                        ax0.plot(ds_era5["temperature"][t],ds_era5['level']/1000,lw=lw_thin,color='black')
+                        ax1.plot(ds_era5["tprime"][t],ds_era5['level']/1000,lw=lw_thin,color='red')
+                    ax0.plot(np.mean(ds_era5["temperature"],axis=0),ds_era5['level']/1000,lw=lw_thick,color='black')
+                    ax1.plot(np.mean(ds_era5['tprime'],axis=0),ds_era5['level']/1000, lw=lw_thick, color='red')
+            else:
+                for t in range(0,np.shape(ds['temperature'])[0],4):      
+                    ax0.plot(ds["temperature"][t],ds['alt_plot'],lw=lw_thin,color='black')
+                    ax1.plot(vars[k][t],ds['alt_plot'],lw=lw_thin,color='red')
+                ax0.plot(np.mean(ds["temperature"],axis=0),ds['alt_plot'],lw=lw_thick,color='black')
+                ax1.plot(np.mean(vars[k],axis=0),ds['alt_plot'], lw=lw_thick, color='red')
             ax0.grid()
 
             numb_str = ['a','b','c','d','e','f','g','h']

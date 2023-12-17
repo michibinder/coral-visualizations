@@ -111,14 +111,15 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
         file_pl     = os.path.join(config.get("OUTPUT","ERA5-FOLDER"), nc_file_name + '-pl.nc')
         file_pvu    = os.path.join(config.get("OUTPUT","ERA5-FOLDER"), nc_file_name + '-pvu.nc')
 
-        if not os.path.exists(file_ml_int):
-            if (not os.path.exists(file_ml)) or (not os.path.exists(file_ml_T21)):
-                """Download ERA5 data"""
-                DATE = start_date.strftime("%Y-%m-%d") + "/to/" + (start_date + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-                ## AREA = '-25/-120/-85/-30',          
-                AREA = config.get("ERA5","AREA")
-                c = cdsapi.Client(quiet=True)
+        """Download ERA5 data"""
+        DATE = start_date.strftime("%Y-%m-%d") + "/to/" + (start_date + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        ## AREA = '-25/-120/-85/-30',          
+        AREA = config.get("ERA5","AREA")
+        c = cdsapi.Client(quiet=True)
 
+        if not os.path.exists(file_ml_int):
+            if not os.path.exists(file_ml):
+                print("[i][{}]   Retrieving full model data...".format(ii))
                 # - Request model level data - #
                 c.retrieve('reanalysis-era5-complete', {
                     'class'   : 'ea',
@@ -128,17 +129,17 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'levtype' : 'ml',
                     'param'   : '129/130/131/132/133/152',
                     'stream'  : 'oper',
-                    # 'time'    : '00:00:00/01:00:00/02:00:00/03:00:00/04:00:00/05:00:00/06:00:00/07:00:00/08:00:00/09:00:00/10:00:00/11:00:00/12:00:00/13:00:00/14:00:00/15:00:00/16:00:00/17:00:00/18:00:00/19:00:00/20:00:00/21:00:00/22:00:00/23:00:00',
-                    'time'    : '00:00:00/to/23:00:00',
+                    'time'    : '00:00:00/01:00:00/02:00:00/03:00:00/04:00:00/05:00:00/06:00:00/07:00:00/08:00:00/09:00:00/10:00:00/11:00:00/12:00:00/13:00:00/14:00:00/15:00:00/16:00:00/17:00:00/18:00:00/19:00:00/20:00:00/21:00:00/22:00:00/23:00:00',
+                    # 'time'    : '00:00:00/to/23:00:00',
                     'type'    : 'an',
                     'area'    : AREA,
-                    'lat'     : config.get("GENERAL","LAT"),
-                    'lon'     : config.get("GENERAL","LON"),
                     'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
                     'format'  : 'netcdf', # 'short'??
                     'resol'   : 'av' # 'av', '639', '21'
                 }, file_ml)
 
+            if not os.path.exists(file_ml_T21):
+                print("[i][{}]   Retrieving T21 model data...".format(ii))
                 # - Request model level data - #
                 c.retrieve('reanalysis-era5-complete', {
                     'class'   : 'ea',
@@ -148,7 +149,8 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'levtype' : 'ml',
                     'param'   : '129/130/131/132/133/152',
                     'stream'  : 'oper',
-                    'time'    : '00:00:00/to/23:00:00',
+                    'time'    : '00:00:00/01:00:00/02:00:00/03:00:00/04:00:00/05:00:00/06:00:00/07:00:00/08:00:00/09:00:00/10:00:00/11:00:00/12:00:00/13:00:00/14:00:00/15:00:00/16:00:00/17:00:00/18:00:00/19:00:00/20:00:00/21:00:00/22:00:00/23:00:00',
+                    # 'time'    : '00:00:00/to/23:00:00',
                     'type'    : 'an',
                     'area'    : AREA,
                     'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
@@ -157,11 +159,13 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                 }, file_ml_T21)
 
             file_ml_coeff = 'input/era5-ml-coeff.csv'
+            print("[i][{}]   Interpolating model levels...".format(ii))
             era5_processor.prepare_interpolated_ml_ds(file_ml,file_ml_T21,file_ml_coeff,file_ml_int)
             os.remove(file_ml)
             os.remove(file_ml_T21)
 
         if (not os.path.exists(file_pl))
+            print("[i][{}]   Retrieving pressure level data...".format(ii))
             c.retrieve('reanalysis-era5-complete', {
                 'class'   : 'ea',
                 'date'    : DATE,
@@ -170,7 +174,8 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                 'levtype' : 'pl',
                 'param'   : '60.128/129.128/131/132', # '60.128/129.128/130.128/131/132/133.128/138.128/155.128/157.128'
                 'stream'  : 'oper',
-                'time'    : '00:00:00/to/23:00:00',
+                'time'    : '00:00:00/01:00:00/02:00:00/03:00:00/04:00:00/05:00:00/06:00:00/07:00:00/08:00:00/09:00:00/10:00:00/11:00:00/12:00:00/13:00:00/14:00:00/15:00:00/16:00:00/17:00:00/18:00:00/19:00:00/20:00:00/21:00:00/22:00:00/23:00:00',
+                # 'time'    : '00:00:00/to/23:00:00',
                 'type'    : 'an',
                 'area'    : AREA,          # North, West, South, East. Default: global
                 'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
@@ -178,6 +183,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
             }, file_pl)
 
         if (not os.path.exists(file_pvu))
+            print("[i][{}]   Retrieving 2PVU level data...".format(ii))
             c.retrieve('reanalysis-era5-complete', {
                 'class'   : 'ea',
                 'date'    : DATE,
@@ -186,7 +192,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                 'levtype' : 'pv',
                 'param'   : '3.128/54.128/129.128/131.128/132.128/133.128',
                 'stream'  : 'oper',
-                'time'    : '00:00:00/to/23:00:00',
+                'time'    : '00:00:00/01:00:00/02:00:00/03:00:00/04:00:00/05:00:00/06:00:00/07:00:00/08:00:00/09:00:00/10:00:00/11:00:00/12:00:00/13:00:00/14:00:00/15:00:00/16:00:00/17:00:00/18:00:00/19:00:00/20:00:00/21:00:00/22:00:00/23:00:00',
                 'type'    : 'an',
                 'area'    : AREA,          # North, West, South, East. Default: global
                 'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
