@@ -1,3 +1,10 @@
+################################################################################
+# Copyright 2023 German Aerospace Center                                       #
+################################################################################
+# This is free software you can redistribute/modify under the terms of the     #
+# GNU Lesser General Public License 3 or later: http://www.gnu.org/licenses    #
+################################################################################
+
 from matplotlib.colors import LinearSegmentedColormap
 
 def get_wave_cmap():

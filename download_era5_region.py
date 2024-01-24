@@ -32,7 +32,8 @@ import filter, cmaps, era5_processor
 
 def download_era5_region(CONFIG_FILE):
     """Visualize lidar measurements (time-height diagrams + absolute temperature measurements)"""
-    
+    print(datetime.datetime.now())
+
     """Settings"""
     config = configparser.ConfigParser()
     config.read(CONFIG_FILE)
@@ -101,7 +102,13 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
         # - Date for plotting should always refer to beginning of the plot (04:00 UTC) - #
         start_date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
         duration = datetime.datetime.utcfromtimestamp(ds.integration_end_time.values[-1].astype('O')/1e9) -  datetime.datetime.utcfromtimestamp(ds.integration_start_time.values[0].astype('O')/1e9)# for calendar
-
+        if config.get("GENERAL","TIMEFRAME_NIGHT") != "NONE":
+            reference_hour = 15 # 15 for CORAL
+            ## for TELMA its probably ok to get date of start and next date 
+            if (start_date.hour < reference_hour):
+                """Get previous day"""
+                start_date = start_date - datetime.timedelta(hours=24)
+                
     if duration > datetime.timedelta(hours=6):
         """Check if file already exists"""
         nc_file_name = file_name[:13]
@@ -135,7 +142,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'area'    : AREA,
                     'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
                     'format'  : 'netcdf', # 'short'??
-                    'resol'   : 'av' # 'av', '639', '21'
+                    'resol'   : 'av', # 'av', '639', '21'
                 }, file_ml)
 
             if not os.path.exists(file_ml_T21):
@@ -155,7 +162,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'area'    : AREA,
                     'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
                     'format'  : 'netcdf', # 'short'??
-                    'resol'   : '21' # 'av', '639', '21'
+                    'resol'   : '21', # 'av', '639', '21'
                 }, file_ml_T21)
 
             file_ml_coeff = 'input/era5-ml-coeff.csv'
@@ -164,13 +171,13 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
             os.remove(file_ml)
             os.remove(file_ml_T21)
 
-        if (not os.path.exists(file_pl))
+        if (not os.path.exists(file_pl)):
             print("[i][{}]   Retrieving pressure level data...".format(ii))
             c.retrieve('reanalysis-era5-complete', {
                 'class'   : 'ea',
                 'date'    : DATE,
                 'expver'  : '1',
-                'levelist': '1/to/1000',
+                'levelist': '1/2/3/5/7/10/20/30/50/70/100/125/150/175/200/225/250/300/350/400/450/500/550/600/650/700/750/775/800/825/850/875/900/925/950/975/1000',
                 'levtype' : 'pl',
                 'param'   : '60.128/129.128/131/132', # '60.128/129.128/130.128/131/132/133.128/138.128/155.128/157.128'
                 'stream'  : 'oper',
@@ -182,7 +189,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                 'format'  : 'netcdf',                # Output needs to be regular lat-lon, so only works in combination with 'grid'!
             }, file_pl)
 
-        if (not os.path.exists(file_pvu))
+        if (not os.path.exists(file_pvu)):
             print("[i][{}]   Retrieving 2PVU level data...".format(ii))
             c.retrieve('reanalysis-era5-complete', {
                 'class'   : 'ea',
@@ -206,4 +213,9 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
 
 if __name__ == '__main__':
     """provide ini file as argument and pass it to function"""
+    """Try changing working directory for Crontab"""
+    try:
+        os.chdir(os.path.dirname(sys.argv[0]))
+    except:
+        print('[i]  Working directory already set!')
     download_era5_region(sys.argv[1])

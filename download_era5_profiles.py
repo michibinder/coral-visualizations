@@ -32,7 +32,8 @@ import filter, cmaps, era5_processor
 
 def download_era5_profiles(CONFIG_FILE):
     """Visualize lidar measurements (time-height diagrams + absolute temperature measurements)"""
-    
+    print("[i]   {}".format(datetime.datetime.now()))
+
     """Settings"""
     config = configparser.ConfigParser()
     config.read(CONFIG_FILE)
@@ -100,7 +101,13 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
         """Define timeframe"""
         # - Date for plotting should always refer to beginning of the plot (04:00 UTC) - #
         start_date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-        duration = datetime.datetime.utcfromtimestamp(ds.integration_end_time.values[-1].astype('O')/1e9) -  datetime.datetime.utcfromtimestamp(ds.integration_start_time.values[0].astype('O')/1e9)# for calendar
+        duration   = datetime.datetime.utcfromtimestamp(ds.integration_end_time.values[-1].astype('O')/1e9) -  datetime.datetime.utcfromtimestamp(ds.integration_start_time.values[0].astype('O')/1e9)# for calendar
+        if config.get("GENERAL","TIMEFRAME_NIGHT") != "NONE":
+            reference_hour = 15 # 15 for CORAL
+            ## for TELMA its probably ok to get date of start and next date 
+            if (start_date.hour < reference_hour):
+                """Get previous day"""
+                start_date = start_date - datetime.timedelta(hours=24)
 
     if duration > datetime.timedelta(hours=6):
         """Check if file already exists"""
@@ -133,7 +140,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'area'    : AREA,
                     'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
                     'format'  : 'netcdf', # 'short'??
-                    'resol'   : 'av' # 'av', '639', '21'
+                    'truncation' : 'av' # 'av', '639', '21' vs 'resol':
                 }, file_ml)
 
             if not os.path.exists(file_ml_T21):
@@ -153,14 +160,14 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'area'    : AREA,
                     'grid'    : '0.25/0.25',               # Latitude/longitude. Default: spherical harmonics or reduced Gaussian grid
                     'format'  : 'netcdf', # 'short'??
-                    'resol'   : '21' # 'av', '639', '21'
+                    'truncation' : '21' # 'av', '639', '21', T1279
                 }, file_ml_T21)
 
             file_ml_coeff = 'input/era5-ml-coeff.csv'
             print("[i][{}]   Interpolating model levels...".format(ii))
             era5_processor.prepare_interpolated_ml_ds(file_ml,file_ml_T21,file_ml_coeff,file_ml_int)
             os.remove(file_ml)
-            os.remove(file_ml_T21)    
+            os.remove(file_ml_T21)                
         print("[i][{}]   ERA5 data prepared for observation: {}".format(ii,obs))
     else:
         print("[i][{}]   Duration below limit for observation: {}".format(ii,obs))
@@ -168,4 +175,9 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
 
 if __name__ == '__main__':
     """provide ini file as argument and pass it to function"""
+    """Try changing working directory for Crontab"""
+    try:
+        os.chdir(os.path.dirname(sys.argv[0]))
+    except:
+        print('[i]   Working directory already set!')
     download_era5_profiles(sys.argv[1])

@@ -139,7 +139,7 @@ def plot_lidar_tmp(CONFIG_FILE):
 
         vars = [ds["temperature"].values, tbg15, tprime_bwf15]
         """Figure"""
-        gskw = {'hspace':0.04, 'wspace':0.03, 'width_ratios': [4,2], 'height_ratios': [5,1,5,1]} #  , 'width_ratios': [5,5]}
+        gskw = {'hspace':0.04, 'wspace':0.03, 'width_ratios': [4,2], 'height_ratios': [4.25,1,4.25,1]} #  , 'width_ratios': [5,5]}
         fig, axes = plt.subplots(4,2, figsize=(7,12), sharey=True, gridspec_kw=gskw)
         axes[1,0].axis('off')
         axes[1,1].axis('off')
@@ -147,8 +147,8 @@ def plot_lidar_tmp(CONFIG_FILE):
         axes[3,1].axis('off')
 
         h_fmt      = mdates.DateFormatter('%H')
-        h_interv   = mdates.HourLocator(interval = 2)
-        filter_str =["Temperature", "15km-BW lowpass","15km-BW highpass"]
+        hlocator   = mdates.HourLocator(byhour=range(0,24,2))
+        filter_str =["Temperature", "","15km BW-highpass"]
         for k in [0,2]:
             ax_lid = axes[k,0]
             ax0    = axes[k,1]
@@ -169,9 +169,9 @@ def plot_lidar_tmp(CONFIG_FILE):
                                 cmap=cmap, norm=norm)
 
             ax_lid.set_xlim(ds['date_startp'],ds['date_endp'])
-            ax_lid.xaxis.set_major_locator(h_interv)
+            ax_lid.xaxis.set_major_locator(hlocator)
+            ax_lid.xaxis.set_major_formatter(plt.FuncFormatter(timelab_format_func))
             ax_lid.yaxis.set_major_locator(MultipleLocator(10))
-            ax_lid.xaxis.set_major_formatter(h_fmt)
             ax_lid.yaxis.set_minor_locator(AutoMinorLocator()) 
             ax_lid.xaxis.set_minor_locator(AutoMinorLocator())
             ax_lid.xaxis.set_label_position('top')
@@ -247,7 +247,8 @@ def plot_lidar_tmp(CONFIG_FILE):
         
         # - Use date of first measurement - #
         date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-        axes[0,0].set_xlabel('hours (UTC) starting on {}'.format(datetime.datetime.strftime(date, '%b %d, %Y')))  
+        axes[0,0].text(-0.015, 1.0, "UTC", horizontalalignment='right', verticalalignment='bottom', transform=axes[0,0].transAxes)
+
 
         if ds.instrument_name == "":
             ds.instrument_name = "LIDAR"
@@ -278,5 +279,10 @@ def plot_lidar_tmp(CONFIG_FILE):
 
 
 if __name__ == '__main__':
-    """provide ini file as argument and pass it to function"""
+    """Provide ini file as argument and pass it to function"""
+    """Try changing working directory for Crontab"""
+    try:
+        os.chdir(os.path.dirname(sys.argv[0]))
+    except:
+        print('[i]  Working directory already set!')
     plot_lidar_tmp(sys.argv[1])

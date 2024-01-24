@@ -17,7 +17,7 @@ Re = 6371229 # m (Radius of Earth for GRIB2 format - applies to ERA5 on ML)
 p0 = 101325
 
 
-def processing_data_for_jetexit_comp(ds,ds_pv,ds_2pvu,western_coordinates):
+def processing_data_for_jetexit_comp(config,ds,ds_pv,ds_2pvu):
     """Further processing of ERA5 data"""
 
     ds['th'] = ds['t'] * (p0/ds['p'])**(2/7)
@@ -48,19 +48,22 @@ def processing_data_for_jetexit_comp(ds,ds_pv,ds_2pvu,western_coordinates):
 
     ds_pv['u_horiz'] = (ds_pv['u']**2 + ds_pv['v']**2)**(1/2)
     # ds_pv['u_horiz'] = (ds_pv['u']**2 + ds_pv['v']**2)**(1/2)
-    ds_pv['div_u'] = ds_pv['u'].differentiate(coord='longitude') + ds_pv['v'].differentiate(coord='latitude')
+    # ds_pv['div_u'] = ds_pv['u'].differentiate(coord='longitude') + ds_pv['v'].differentiate(coord='latitude')
 
-    if western_coordinates:
-        ds['longitude_plot']      = ds['longitude']- 360
-        ds_pv['longitude_plot']   = ds['longitude']- 360
-        ds_2pvu['longitude_plot'] = ds['longitude']- 360
+    if config.getboolean("ERA5","WESTERN_COORDS"):
+        ds['longitude_plot']      = ds['longitude'] - 360
+        ds_pv['longitude_plot']   = ds_pv['longitude'] - 360
+        ds_2pvu['longitude_plot'] = ds_2pvu['longitude'] - 360
+        #ds_pv['longitude_plot']   = (["longitude"], ds['longitude'].values - 360)
+        #ds_2pvu['longitude_plot'] = (["longitude"], ds['longitude'].values - 360)
+        
     else:
         ds['longitude_plot']      = ds['longitude']
-        ds_pv['longitude_plot']   = ds['longitude']
-        ds_2pvu['longitude_plot'] = ds['longitude']
+        ds_pv['longitude_plot']   = ds_pv['longitude']
+        ds_2pvu['longitude_plot'] = ds_2pvu['longitude']
 
     dims_pv = np.shape(ds_pv['pv'])
-    ds_pv['longitude_3d']  = ds_pv.longitude_plot.expand_dims(dim={'time':dims_pv[0],'level':dims_pv[1],'latitude':dims_pv[2]},axis=[0,1,2])
+    ds_pv['longitude_3d'] = ds_pv.longitude_plot.expand_dims(dim={'time':dims_pv[0],'level':dims_pv[1],'latitude':dims_pv[2]},axis=[0,1,2])
     ds_pv['latitude_3d']  = ds_pv.latitude.expand_dims(dim={'time':dims_pv[0],'level':dims_pv[1],'longitude':dims_pv[3]},axis=[0,1,3])
 
     return ds,ds_pv,ds_2pvu
@@ -69,6 +72,7 @@ def processing_data_for_jetexit_comp(ds,ds_pv,ds_2pvu,western_coordinates):
 def prepare_interpolated_ml_ds(file_ml,file_ml_T21,file_ml_coeff,file_ml_int):
     """"Open files"""
     ml_coeff = pd.read_csv(file_ml_coeff)
+    # engine="netcdf4"
     with xr.open_dataset(file_ml) as ds:
         with xr.open_dataset(file_ml_T21) as ds_T21:
             """Interpolate the model level dataset to a regular grid and combine with T21 (filtered) dataset"""
