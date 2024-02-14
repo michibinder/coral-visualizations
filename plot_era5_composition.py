@@ -11,6 +11,7 @@ import glob
 import shutil
 import configparser
 import datetime
+import multiprocessing
 
 import numpy as np
 import xarray as xr
@@ -32,6 +33,11 @@ import filter, cmaps, era5_processor, lidar_processor
 
 plt.style.use('latex_default.mplstyle')
 
+"""Config"""
+duration_threshold = 6
+content_folder = "era5-tropo"
+#content_folder = "era5-jet"
+PVU_z_levels = [3,4,5,6,7,8,9,10,11,12,13]
 
 def timelab_format_func(value, tick_number):
     dt = mdates.num2date(value)
@@ -49,7 +55,7 @@ def major_formatter_lat(x, pos):
     return "%.f°S" % abs(x)
 
 
-def plot_era5_composition(CONFIG_FILE):
+def prepare_era5_composition(CONFIG_FILE):
     """Visualize ERA5 composition of virtual lidar measurement,
     zonal & meridional cross sections in stratosphere and at tropopause level"""
     
@@ -65,55 +71,98 @@ def plot_era5_composition(CONFIG_FILE):
     
     config["INPUT"]["ERA5-FOLDER"] = os.path.join(config.get("OUTPUT","FOLDER"),"era5-region")
 
-    ##folder = "era5-tropo"
-    folder = "era5-jet"
-    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),folder), exist_ok=True)
-    zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
-    trange = eval(config.get("GENERAL","TRANGE"))
+    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),content_folder), exist_ok=True)
+    ##zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
+    ##trange = eval(config.get("GENERAL","TRANGE"))
     
+    config['GENERAL']['NTASKS'] = str(int(multiprocessing.cpu_count()-2))
+    #config['GENERAL']['NTASKS'] = str(2)
+    print("[i]  CPUs available: {}".format(multiprocessing.cpu_count()))
+    print("[i]  CPUs used: {}".format(config.get("GENERAL","NTASKS")))
+    print("[i]  Observations (without duration limit): {}".format(len(obs_list)))
+    procs = []
+    sema = multiprocessing.Semaphore(config.getint("GENERAL","NTASKS"))
+    ii = 0
+    # - Start processes - #
     for ii, obs in enumerate(obs_list):
-        file_name = os.path.split(obs)[-1]
-        ds = lidar_processor.open_and_decode_lidar_measurement(obs)
-       
-        if ds.duration > datetime.timedelta(hours=6):
-            ds = lidar_processor.process_lidar_measurement(config, ds)
+        sema.acquire()
+        proc = multiprocessing.Process(target=plot_era5_composition, args=(ii, config, obs, sema))
+        procs.append(proc)
+        proc.start()   
 
-            """Load ERA5 data for plot"""
+    # - Complete processes - #
+    for proc in procs:
+        proc.join()
+
+
+def plot_era5_composition(ii,config,obs,sema):
+    file_name = os.path.split(obs)[-1]
+    ds = lidar_processor.open_and_decode_lidar_measurement(obs)
+    
+    if ds.duration > datetime.timedelta(hours=duration_threshold):
+        """File name with time and duration"""
+        hours = ds.duration.seconds // 3600
+        minutes = (ds.duration.seconds % 3600) // 60
+        duration_str = ''
+        if hours <= 9:
+            duration_str = duration_str + '0' + str(int(hours))
+        else:
+            duration_str = duration_str + str(int(hours))
+        duration_str = duration_str + 'h'
+        if minutes <= 9:
+            duration_str = duration_str + '0' + str(int(minutes))
+        else:
+            duration_str = duration_str + str(int(minutes))
+        duration_str   = duration_str + 'min'
+        animation_name = file_name[:14] + duration_str + ".mp4"
+        animation_path = os.path.join(config.get("OUTPUT","FOLDER"), content_folder, animation_name)
+
+        if os.path.isfile(animation_path):
+            print("[i]  ERA5 animation ALREADY EXISTS for measurement {}".format(file_name))
+        else:
+            """Process lidar data and load ERA5 data for plot"""
             era5_files_name = os.path.join(config["INPUT"]["ERA5-FOLDER"], file_name[0:13])
-            ds_ml   = xr.open_dataset(era5_files_name + '-ml-int.nc')
-            ds_pv   = xr.open_dataset(era5_files_name + '-pl.nc')
-            ds_2pvu = xr.open_dataset(era5_files_name + '-pvu.nc')
-            ds_ml,ds_pv,ds_2pvu = era5_processor.processing_data_for_jetexit_comp(config,ds_ml,ds_pv,ds_2pvu)
-            preprocessed_vars = vlidar_and_latlon_slices(config,ds_ml,ds_pv)
+            if not os.path.exists(era5_files_name + '-ml-int.nc'):
+                print("[i]  Missing ERA5 data for measurement {}".format(file_name))
+            else:
+                ds = lidar_processor.process_lidar_measurement(config, ds)
 
-            if folder == "era5-tropo":
-                """Plot ERA5 tropopause dynamics composition"""
-                config["OUTPUT"]["FOLDER_PLOTS"] = os.path.join(config.get("OUTPUT","FOLDER"), folder, file_name[0:13])
-                os.makedirs(config.get("OUTPUT","FOLDER_PLOTS"), exist_ok=True)
-                ##tstep = 23
-                ##era5_tropopause_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
-                for tstep in range(np.shape(ds_ml['t'])[0]):
-                    era5_tropopause_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
-                    print("Plot: {}".format(tstep), end="\r")
+                ds_ml   = xr.open_dataset(era5_files_name + '-ml-int.nc')
+                ds_pv   = xr.open_dataset(era5_files_name + '-pl.nc')
+                ds_2pvu = xr.open_dataset(era5_files_name + '-pvu.nc')
+                ds_ml,ds_pv,ds_2pvu = era5_processor.processing_data_for_jetexit_comp(config,ds_ml,ds_pv,ds_2pvu)
+                preprocessed_vars = vlidar_and_latlon_slices(config,ds_ml,ds_pv)
 
-            elif folder == "era5-jet":
-                """Plot ERA5 jet regions and 2PVU level in mainly horizontal cross sections"""
-                config["OUTPUT"]["FOLDER_PLOTS"] = os.path.join(config.get("OUTPUT","FOLDER"), folder, file_name[0:13])
-                os.makedirs(config.get("OUTPUT","FOLDER_PLOTS"), exist_ok=True)
-                ##tstep = 23
-                ##era5_jet_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
-                for tstep in range(np.shape(ds_ml['t'])[0]):
-                    era5_jet_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
-                    print("Plot: {}".format(tstep), end="\r")
+                if content_folder == "era5-tropo":
+                    """Plot ERA5 tropopause dynamics composition"""
+                    config["OUTPUT"]["FOLDER_PLOTS"] = os.path.join(config.get("OUTPUT","FOLDER"), content_folder, file_name[0:13])
+                    os.makedirs(config.get("OUTPUT","FOLDER_PLOTS"), exist_ok=True)
+                    # tstep = 23
+                    # era5_tropopause_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
+                    for tstep in range(np.shape(ds_ml['t'])[0]):
+                        era5_tropopause_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
+                        print("Plot: {}".format(tstep), end="\r")
 
-            ds.close()
-            ds_ml.close()
-            ds_pv.close()
-            ds_2pvu.close()
+                elif content_folder == "era5-jet":
+                    """Plot ERA5 jet regions and 2PVU level in mainly horizontal cross sections"""
+                    config["OUTPUT"]["FOLDER_PLOTS"] = os.path.join(config.get("OUTPUT","FOLDER"), content_folder, file_name[0:13])
+                    os.makedirs(config.get("OUTPUT","FOLDER_PLOTS"), exist_ok=True)
+                    # tstep = 23
+                    # era5_jet_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
+                    for tstep in range(np.shape(ds_ml['t'])[0]):
+                        era5_jet_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, tstep)
+                        print("Plot: {}".format(tstep), end="\r")
 
-            create_animation(config.get("OUTPUT","FOLDER_PLOTS"), os.path.join(config.get("OUTPUT","FOLDER"), folder, file_name[0:13] + ".mp4"))
-            #shutil.rmtree(config.get("OUTPUT","FOLDER_PLOTS"), ignore_errors=True)
-            print("[i]  ERA5 animation of tropopause compostion done")
+                """Closing files and generating animation"""
+                ds.close()
+                ds_ml.close()
+                ds_pv.close()
+                ds_2pvu.close()
+
+                create_animation(config.get("OUTPUT","FOLDER_PLOTS"), animation_path)
+                shutil.rmtree(config.get("OUTPUT","FOLDER_PLOTS"), ignore_errors=True)
+                print("[i]  ERA5 animation created for measurement {}".format(file_name))
+    sema.release()
 
 
 def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
@@ -134,7 +183,7 @@ def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
 
     """Figure"""
     projection = ccrs.PlateCarree()
-    gskw = {'hspace':0.05, 'wspace':0.03, 'height_ratios': [1.12,1,1,1,1.2], 'width_ratios': [7,7,1]} #  , 'width_ratios': [5,5]}
+    gskw = {'hspace':0.03, 'wspace':0.03, 'height_ratios': [1.12,1,1,1,1.2], 'width_ratios': [7,7,1]} #  , 'width_ratios': [5,5]}
     fig, axes = plt.subplots(5,3, figsize=(9,13), sharex=True, sharey=True, gridspec_kw=gskw, subplot_kw={'projection': ccrs.PlateCarree()}) # 
     # fig.subplots_adjust(bottom=0.05, top=0.95, left=0.05, right=0.95,
     #                 wspace=0.02, hspace=0.02)
@@ -158,7 +207,7 @@ def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
     for ax in axes[0,0:2]:
         ax.remove()
     # ax_lid = fig.add_subplot(gs_top[0,0:2])
-    gs_top = fig.add_gridspec(5,3, hspace=0.05, wspace=0.03, height_ratios=[1.12,1,1,1,1.2], width_ratios=[11,3,1])
+    gs_top = fig.add_gridspec(5,3, hspace=0.03, wspace=0.03, height_ratios=[1.12,1,1,1,1.2], width_ratios=[11,3,1])
     ax_lid  = fig.add_subplot(gs_top[0])
     ax_lid2 = fig.add_subplot(gs_top[1])
 
@@ -182,10 +231,10 @@ def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
     # - Linear levels for contour plots - #
     ##clev_lin = [-8,-7,-6,-5,-4,-3,-2,-1,1,2,3,4,5,6,7,8]
     ##clev_lin = [-8,-7,-6,-5,-4,-3,-2,-1,1,2,3,4,5,6,7,8]
-    clev_lin = [-5,-4.5,-4,-3.5,-3,-2.5,-2,-1.5,-1,1,1.5,2,2.5,3,3.5,4,4.5,5]
+    clev_lin = [-10,-9,-8,-7,-6,-5,-4.5,-4,-3.5,-3,-2.5,-2,-1.5,-1,1,1.5,2,2.5,3,3.5,4,4.5,5,6,7,8,9,10]
     blue = 'mediumblue'
     red  = 'firebrick'
-    clev_colors = [blue,blue,blue,blue,blue,blue,blue,blue,blue,red,red,red,red,red,red,red,red,red]
+    clev_colors = [blue,blue,blue,blue,blue,blue,blue,blue,blue,blue,blue,blue,blue,blue,red,red,red,red,red,red,red,red,red,red,red,red,red,red]
 
     # - Theta / U / Pressure levels - #
     thlev = np.arange(220,600,5)
@@ -299,8 +348,7 @@ def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
             gls.bottom_labels=False
 
         # --- 2PVU --- #
-        z_levs    = [3,4,5,6,7,8,9,10,11,12,13]
-        contf_pvu = ax_pvu.contourf(ds_2pvu.longitude_plot, ds_2pvu['latitude'], ds_2pvu['z'][t,:,:]/(1000*g), levels=z_levs, transform=projection, cmap='turbo', alpha=0.85, extend='both') # Spectral_r
+        contf_pvu = ax_pvu.contourf(ds_2pvu.longitude_plot, ds_2pvu['latitude'], ds_2pvu['z'][t,:,:]/(1000*g), levels=PVU_z_levels, transform=projection, cmap='turbo', alpha=0.85, extend='both') # Spectral_r
         cont_p    = ax_pvu.contour(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['p'].sel(level=tmp_level)[t,:,:],colors='dimgray', levels=pressure_levels, linewidths=lw_wind)
 
         cont_tprime  = ax_pvu.contour(ds_ml.longitude_plot,  ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level), colors='k', levels=clev_lin, linewidths=lw_medium, extend='both')
@@ -395,7 +443,7 @@ def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
         th_y_pos = np.linspace(13,30,6)
         th_label_lon = []
         for lab in th_y_pos:
-            th_label_lon.append((lon-40,lab))
+            th_label_lon.append((lon-30,lab))
         axb.clabel(cont_th0, fmt= '%1.0fK', inline=True, fontsize=9, manual=th_label_lon)
 
 
@@ -426,7 +474,7 @@ def era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
     cbar.set_label(r"$T'$ / K")
 
     # - 2PVU - #
-    cbar = fig.colorbar(contf_pvu, ticks=z_levs, ax=axes[1:3,2], location='right', fraction=1, shrink=0.75, aspect=27)
+    cbar = fig.colorbar(contf_pvu, ticks=PVU_z_levels, ax=axes[1:3,2], location='right', fraction=1, shrink=0.75, aspect=27)
     cbar.set_label('height of the dynamical tropopause / km')
     cb_position = cbar.ax.get_position()
     cbar.ax.set_position([cb_position.x0, cb_position.y0+0.04, cb_position.width, cb_position.height])
@@ -762,11 +810,10 @@ def era5_tropopause_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
     axes[k,1].tick_params(which='both', top=True, labelbottom=True,labeltop=False)
 
     """2PVU horizontal section and winds 850hPa"""
-    z_levs = [4,5,6,7,8,9,10,11,12,13]
     geop_levels = np.arange(1000,4000,50)
     nbarbs = 25
     met_level = 700 # hPa
-    contf_pvu  = ax_pvu.contourf(ds_2pvu.longitude_plot, ds_2pvu.latitude, ds_2pvu['z'][t,:,:]/(1000*g), levels=z_levs, transform=projection,cmap='turbo', extend='both') # Spectral_r
+    contf_pvu  = ax_pvu.contourf(ds_2pvu.longitude_plot, ds_2pvu.latitude, ds_2pvu['z'][t,:,:]/(1000*g), levels=PVU_z_levels, transform=projection,cmap='turbo', extend='both') # Spectral_r
     cont_met   = ax_pvu.contour(ds_pv.longitude_plot, ds_pv.latitude, ds_pv['z'].sel(level=met_level)[t,:,:]/g, transform=projection, colors='k', levels=geop_levels, linewidths=0.4)
     barbs_met  = ax_pvu.barbs(ds_pv.longitude_plot[::nbarbs], ds_pv.latitude[::nbarbs], ds_pv['u'].sel(level=met_level)[t,::nbarbs,::nbarbs], ds_pv['v'].sel(level=met_level)[t,::nbarbs,::nbarbs], transform=projection, length=5, linewidth=0.7)
     ax_pvu.clabel(cont_met, fmt= '%1.0fm', inline=True, fontsize=fs_clabel)
@@ -810,7 +857,7 @@ def era5_tropopause_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, t):
     cbar = fig.colorbar(contf, ax=axes[2,2], location='right', shrink=0.9, fraction=1, aspect=15)
     cbar.set_label('$N^2$ / 10$^{-4}$ s$^{-2}$')
 
-    cbar = fig.colorbar(contf_pvu, ax=axes[4,2], location='right', fraction=1, shrink=0.9, aspect=17)
+    cbar = fig.colorbar(contf_pvu, ticks=PVU_z_levels, ax=axes[4,2], location='right', fraction=1, shrink=0.9, aspect=17)
     cbar.set_label('height of the dynamical tropopause / km')
 
     fig_name = 'era5_trop_comp_' + '{:02d}'.format(t) + '.png'
@@ -855,11 +902,17 @@ def vlidar_and_latlon_slices(config,ds_ml,ds_pv):
 
     ### - PV dataset (on pressure levels) - ###
     ##print(ds_pv)
-    vars["pv_lon_z"] = ds_pv['pv'].sel(latitude=lat)*10**(6)          ##  .sel(latitude =slice(lat_avg[0],lat_avg[1])).mean(axis=2) * 10**(6)
-    vars["pv_lat_z"] = ds_pv['pv'].sel(longitude=lon_eastern)*10**(6) ## .sel(longitude=slice(lon_avg[0],lon_avg[1])).mean(axis=3) * 10**(6)
+    # vars["pv_lon_z"] = ds_pv['pv'].sel(latitude=lat)*10**(6)          ##  .sel(latitude =slice(lat_avg[0],lat_avg[1])).mean(axis=2) * 10**(6)
+    # vars["pv_lat_z"] = ds_pv['pv'].sel(longitude=lon_eastern)*10**(6) ## .sel(longitude=slice(lon_avg[0],lon_avg[1])).mean(axis=3) * 10**(6)
 
-    vars["zpv_lon_z"] = ds_pv['z'].sel(latitude=lat)/(g*1000)          ## .sel(latitude =slice(lat_avg[0],lat_avg[1])).mean(axis=2)
-    vars["zpv_lat_z"] = ds_pv['z'].sel(longitude=lon_eastern)/(g*1000) ## .sel(longitude=slice(lon_avg[0],lon_avg[1])).mean(axis=3)
+    # vars["zpv_lon_z"] = ds_pv['z'].sel(latitude=lat)/(g*1000)          ## .sel(latitude =slice(lat_avg[0],lat_avg[1])).mean(axis=2)
+    # vars["zpv_lat_z"] = ds_pv['z'].sel(longitude=lon_eastern)/(g*1000) ## .sel(longitude=slice(lon_avg[0],lon_avg[1])).mean(axis=3)
+
+    vars["pv_lon_z"] = ds_pv['pv'].sel(latitude =slice(lat_avg[0],lat_avg[1])).mean(axis=2) * 10**(6)
+    vars["pv_lat_z"] = ds_pv['pv'].sel(longitude=slice(lon_avg[0],lon_avg[1])).mean(axis=3) * 10**(6)
+
+    vars["zpv_lon_z"] = ds_pv['z'].sel(latitude =slice(lat_avg[0],lat_avg[1])).mean(axis=2) / (g*1000) 
+    vars["zpv_lat_z"] = ds_pv['z'].sel(longitude=slice(lon_avg[0],lon_avg[1])).mean(axis=3) / (g*1000) 
 
     """Virtual lidar data"""
     vert_res                   = ds_ml['level'].values[1]-ds_ml['level'].values[0]
@@ -883,8 +936,9 @@ def create_animation(png_folder, output_path):
     filenames    = sorted(os.listdir(png_folder))
     fps          = 4
     ## fps          = 10
+    macro_block_size = 16 # Default is 16 for optimal compatibility
 
-    with imageio.get_writer(output_path, fps=fps) as writer: # duration=1000*1/fps
+    with imageio.get_writer(output_path, fps=fps, macro_block_size=macro_block_size) as writer: # duration=1000*1/fps
         for filename in filenames:
             if filename.endswith(".png"):
                 image = imageio.imread(os.path.join(png_folder, filename))
@@ -899,4 +953,4 @@ if __name__ == '__main__':
         os.chdir(os.path.dirname(sys.argv[0]))
     except:
         print('[i]  Working directory already set!')
-    plot_era5_composition(sys.argv[1])
+    prepare_era5_composition(sys.argv[1])
