@@ -7,10 +7,12 @@
 
 import os
 import sys
+import time
 import glob
 import shutil
 import configparser
 import datetime
+import multiprocessing
 
 import numpy as np
 import xarray as xr
@@ -24,10 +26,13 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import warnings
 warnings.simplefilter("ignore", RuntimeWarning)
 
-import filter, cmaps
+import filter, cmaps, lidar_processor
 
 plt.style.use('latex_default.mplstyle')
 
+"""Config"""
+VERTICAL_CUTOFF = 15 # km (LAMBDA_CUT)
+FILTERTYPE      = "tmp"
 
 def timelab_format_func(value, tick_number):
     dt = mdates.num2date(value)
@@ -49,93 +54,63 @@ def plot_lidar_tmp(CONFIG_FILE):
     else:
         obs_list = os.path.join(config.get("INPUT","OBS_FOLDER"), config.get("INPUT","OBS_FILE"))
     
-    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),'tmp'), exist_ok=True)
-    zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
-    trange = eval(config.get("GENERAL","TRANGE"))
+    config["INPUT"]["ERA5-FOLDER"] = os.path.join(config.get("OUTPUT","FOLDER"),"era5-profiles")
+
+    config["GENERAL"]["FILTERTYPE"] = FILTERTYPE
+    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","FILTERTYPE")), exist_ok=True)
     
-    ii = 0
-    for obs in obs_list:
-        if (ii % 50) == 0:
-            print("Plotting measurement: {}".format(ii))
+    config['GENERAL']['NCPUS'] = str(int(multiprocessing.cpu_count()-2))
+    print("[i]   CPUs available: {}".format(multiprocessing.cpu_count()))
+    print("[i]   CPUs used: {}".format(config.get("GENERAL","NCPUS")))
+    print("[i]   Observations (without duration limit): {}".format(len(obs_list)))
+    stime   = time.time()
 
+    args_list = []
+    for ii, obs in enumerate(obs_list):
+        args = (ii, config, obs)
+        args_list.append(args)
+    
+    with multiprocessing.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
+        pool.map(plot_lidar_tmp_standard, args_list)
+
+    # running_procs = []
+    # sema = multiprocessing.Semaphore(config.getint("GENERAL","NCPUS"))
+    # for ii, obs in enumerate(obs_list):
+    #     for p in running_procs[:]:
+    #         if not p.is_alive():
+    #             p.join()
+    #             running_procs.remove(p)
+
+    #     sema.acquire()
+    #     proc = multiprocessing.Process(target=plot_lidar_tmp_standard, args=(ii, config, obs, sema))
+    #     running_procs.append(proc)
+    #     proc.start()
+    
+    # for proc in running_procs:
+    #     proc.join()
+
+    etime    = time.time()
+    hours    = int((etime - stime) / 3600)
+    minutes  = int(((etime - stime) % 3600) / 60)
+    seconds  = int(((etime - stime) % 60)) # seconds = round(((etime - stime) % 60), 3)
+    time_str = str(hours).zfill(2) + ":" + str(minutes).zfill(2) + ":" + str(seconds).zfill(2)
+    print("")
+    print(f"[i]  Visualizations completed in {time_str} hours.")
+
+
+def plot_lidar_tmp_standard(args_list):
+    (ii,config,obs) = args_list
+    
+    try:
         file_name = os.path.split(obs)[-1]
-        ds = xr.open_dataset(obs, decode_times=False)
-
-        """Decode time with time offset"""
-        # - Change from milliseconds to seconds - #
-        # ds.assign_coords({'time':ds.time.values / 1000})
-        ds.coords['time'] = ds.time.values / 1000
-        ds.integration_start_time.values = ds.integration_start_time.values / 1000
-        ds.integration_end_time.values = ds.integration_end_time.values / 1000
-        
-        # - Set reference date - #
-        ### Reference date is first reference
-        ### 'Time offset' is 'seconds' after reference date
-        ### Time is 'seconds' after time offset
-        unit_str = ds.time_offset.attrs['units']
-        ds.attrs['reference_date'] = unit_str[14:-6]
-        
-        # - Set reference date in units attribute - #
-        time_reference = datetime.datetime.strptime(ds.reference_date, '%Y-%m-%d %H:%M:%S.%f')
-        time_offset = datetime.timedelta(seconds=float(ds.time_offset.values[0]))
-        new_time_reference = time_reference + time_offset
-        time_reference_str = datetime.datetime.strftime(new_time_reference, '%Y-%m-%d %H:%M:%S')
-
-        ds.time.attrs['units'] = 'seconds since ' + time_reference_str
-        ds.integration_start_time.attrs['units'] = 'seconds since ' + time_reference_str
-        ds.integration_end_time.attrs['units'] = 'seconds since ' + time_reference_str
-        ds.time.attrs['resolution'] = "15"
-
-        ds = xr.decode_cf(ds, decode_coords = True, decode_times = True) 
-
-        """Define timeframe"""
-        # - Date for plotting should always refer to beginning of the plot (04:00 UTC) - #
-        start_date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-        duration = datetime.datetime.utcfromtimestamp(ds.integration_end_time.values[-1].astype('O')/1e9) -  datetime.datetime.utcfromtimestamp(ds.integration_start_time.values[0].astype('O')/1e9)# for calendar
-        if config.get("GENERAL","TIMEFRAME_NIGHT") != "NONE":
-            timeframe = eval(config.get("GENERAL", "TIMEFRAME_NIGHT"))
-            if timeframe[1] < timeframe[0]:
-                fixed_intervall = timeframe[1] + 24 - timeframe[0]
-            else: 
-                fixed_intervall = timeframe[1] - timeframe[0]
-                
-            fixed_start_date = datetime.datetime(start_date.year, start_date.month, start_date.day, timeframe[0], 0,0)
-            reference_hour   = 15
-            if (start_date.hour > reference_hour) and (fixed_start_date.hour > reference_hour):
-                ds['date_startp'] = fixed_start_date
-                ds['date_endp']   = fixed_start_date + datetime.timedelta(hours=fixed_intervall)
-            elif (start_date.hour > reference_hour) and (fixed_start_date.hour < reference_hour): # prob in range of 0 to 10
-                ds['date_startp'] = fixed_start_date + datetime.timedelta(hours=24)
-                ds['date_endp']   = fixed_start_date + datetime.timedelta(hours=24+fixed_intervall)
-            elif (start_date.hour < reference_hour) and (fixed_start_date.hour > reference_hour):
-                ds['date_startp'] = fixed_start_date - datetime.timedelta(hours=24)
-                ds['date_endp']   = fixed_start_date - datetime.timedelta(hours=24-fixed_intervall)
-            else: # (start_date.hour < 15) and (fixed_start_date.hour < 15):
-                ds['date_startp'] = fixed_start_date
-                ds['date_endp']   = fixed_start_date + datetime.timedelta(hours=fixed_intervall)
-                
-            ds['fixed_timeframe'] = 1
-        else:
-            timeframe = config.getint("GENERAL", "TIMEFRAME")
-            start_date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-            ds['date_startp'] = start_date
-            ds['date_endp']   = start_date + datetime.timedelta(hours=timeframe)
-            ds['fixed_timeframe'] = 1
-            
-        """ Temperature missing values (Change 0 to NaN)"""
-        ds.temperature.values = np.where(ds.temperature == 0, np.nan, ds.temperature)
-        ds.temperature_err.values = np.where(ds.temperature_err == 0, np.nan, ds.temperature_err)
+        zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
+        trange = eval(config.get("GENERAL","TRANGE"))
+        ds = lidar_processor.open_and_decode_lidar_measurement(obs)
+        ds = lidar_processor.process_lidar_measurement(config, ds)
 
         """Data for plotting"""
-        ds['alt_plot'] = (ds.altitude + ds.altitude_offset + ds.station_height) / 1000 #km
-        vert_res       = (ds['alt_plot'][1]-ds['alt_plot'][0]).values[0]
-        tprime_bwf20, tbg20 = filter.butterworth_filter(ds["temperature"].values, highcut=1/20, fs=1/vert_res, order=5, mode='low')
-        tprime_bwf15, tbg15 = filter.butterworth_filter(ds["temperature"].values, highcut=1/15, fs=1/vert_res, order=5, mode='low')
-        tprime_bwf15, _ = filter.butterworth_filter(ds["temperature"].values, highcut=1/15, fs=1/vert_res, order=5, mode='high')
-        #ds['tprime_bwf20'] = butterworthf(ds, highcut=1/20, fs=1/0.1, order=5, single_column_filter=True)['tmp_pert']
-        #tprime_bwf15, tbg15 = butterworthf(ds, highcut=1/15, fs=1/0.1, order=5, single_column_filter=True)['tmp_pert']
-        #meanT = ds["temperature"].mean(dim='time')
-        tprime_temp  = (ds["temperature"]-ds["temperature"].mean(dim='time')).values
+        tprime_bwf15, tbg15 = filter.butterworth_filter(ds["temperature"].values, cutoff=1/VERTICAL_CUTOFF, fs=1/ds.vres, order=5, mode='both')
+        tprime_temp     = (ds["temperature"]-ds["temperature"].mean(dim='time')).values
 
         vars = [ds["temperature"].values, tbg15, tprime_bwf15]
         """Figure"""
@@ -238,45 +213,25 @@ def plot_lidar_tmp(CONFIG_FILE):
             cbar.set_label(cbar_l)
 
         axes[0,0].set_ylim(zrange[0],zrange[1])
-    
+
         """Formatting"""
-        # if ds.fixed_timeframe.values:
-        #     date = datetime.datetime.utcfromtimestamp(ds.date_endp.values.astype('O')/1e9)
-        # else: 
-        #     date = datetime.datetime.utcfromtimestamp(ds.time.values[-1].astype('O')/1e9)
-        
-        # - Use date of first measurement - #
-        date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-        axes[0,0].text(-0.015, 1.0, "UTC", horizontalalignment='right', verticalalignment='bottom', transform=axes[0,0].transAxes)
+        TRES = int(config.get("GENERAL","RESOLUTION").split("Z")[0][2:])
+        VRES = int(config.get("GENERAL","RESOLUTION").split("Z")[-1][:-3])
+        axes[0,0].text(-0.025, 1.0, "UTC", horizontalalignment='right', verticalalignment='bottom', transform=axes[0,0].transAxes)
 
-
-        if ds.instrument_name == "":
-            ds.instrument_name = "LIDAR"
         fig.suptitle('          German Aerospace Center (DLR)\n \
         {}, {}\n \
         ------------------------------\n \
-        Resolution: {}$\,$km  x  {}$\,$min'.format(ds.instrument_name, ds.station_name, ds.altitude.resolution / 1000, ds.time.resolution))
+        Resolution: {}$\,$km  x  {}$\,$min'.format(config.get("GENERAL","INSTRUMENT"), config.get("GENERAL","STATION_NAME"), VRES, TRES))
 
         """Save figure"""
-        hours = duration.seconds // 3600
-        minutes = (duration.seconds % 3600) // 60
-        duration_str = ''
-        if hours <= 9:
-            duration_str = duration_str + '0' + str(int(hours))
-        else:
-            duration_str = duration_str + str(int(hours))
-        duration_str = duration_str + 'h'
-        if minutes <= 9:
-            duration_str = duration_str + '0' + str(int(minutes))
-        else:
-            duration_str = duration_str + str(int(minutes))
-        duration_str = duration_str + 'min'
-        fig_name = file_name[:14] + duration_str + '.png'
-        fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),'tmp',fig_name), facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
-
-        ii += 1 
-    return
-
+        fig_name = file_name[:14] + ds.duration_str + '.png'
+        fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","FILTERTYPE"),fig_name), facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
+        
+        print(f"Number of plotted measurements: {ii+1}", end='\r')
+    except:
+        print(f"Plot failed for measurement: {file_name}")
+    # sema.release()
 
 if __name__ == '__main__':
     """Provide ini file as argument and pass it to function"""

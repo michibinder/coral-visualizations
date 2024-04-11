@@ -50,26 +50,26 @@ def butterworth_filter_and_interp(data, z=None, highcut=1/20, fs=1/0.1, order=5)
     # tprime_lid, tbg_lid = butterworthf(data_lid, highcut=1/20000, fs=1/vert_res, order=5)
 
 
-def butterworth_filter(data, highcut=1/15, fs=1/0.1, order=5, mode='low'):
+def butterworth_filter(data, cutoff=1/15, fs=1/0.1, order=5, mode='low'):
     """butterworth filter applied to matrix or each column seperately
         - uses the signal.butter and signal.lfilter functions of the SCIPY library
-        - applies a low pass filter based on the given order and highcut frequency
+        - applies a BW filter based on the given order and cutoff frequency
     Input:
-        - DS
-        - highcut frequency (1/wavelength) 5 work good 20km?
+        - 2D matrix
+        - highcut frequency (1/wavelength) (1/Period)
         - fs (sampling frequency) -> 100m 
-        - order of filter = 3
+        - order of filter = 5
     Output:
-        - ds_tmp, which now includes the filtered temperature background and the perturbation
+        - 2D matrix of perturbations (higher frequencies than cutoff) and background (lower frequencies than cutoff) 
     """
     
-    if mode=='low':
-        b, a = butter_lowpass(highcut, fs, order=order) 
+    if mode=='low' or mode == 'both':
+        b, a = butter_lowpass(cutoff, fs, order=order) 
         # print(b,a)
         # print("filter stable!", np.all(np.abs(np.roots(a))<1))
 
         # - Filter each column (returns matrix with Nans at bottom and top) - #
-        tmp_bg = np.full(data.shape, np.NaN)
+        bg = np.full(data.shape, np.NaN)
         for col, column in enumerate(data):
             mask = np.isnan(column) # dataarray
             c_masked = column[~mask] # dataarray
@@ -81,18 +81,20 @@ def butterworth_filter(data, highcut=1/15, fs=1/0.1, order=5, mode='low'):
                 c_filtered = c_filtered[len(c_masked):]
                 column_bg = column.copy()
                 column_bg[~mask] = c_filtered
-                tmp_bg[col,:] = column_bg
+                bg[col,:] = column_bg
             else: # column of NANs is just passed through
-                tmp_bg[col,:] = column
-
-        tmp_pert = data - tmp_bg
-    else:
-        b, a = butter_highpass(highcut, fs, order=order) 
+                bg[col,:] = column
+        
+        if mode=='low':
+            pert = data - bg 
+    
+    if mode == 'high' or mode == 'both':
+        b, a = butter_highpass(cutoff, fs, order=order) 
         # print(b,a)
         # print("filter stable!", np.all(np.abs(np.roots(a))<1))
 
         # - Filter each column (returns matrix with Nans at bottom and top) - #
-        tmp_bg = np.full(data.shape, np.NaN)
+        pert = np.full(data.shape, np.NaN)
         for col, column in enumerate(data):
             mask = np.isnan(column) # dataarray
             c_masked = column[~mask] # dataarray
@@ -102,14 +104,16 @@ def butterworth_filter(data, highcut=1/15, fs=1/0.1, order=5, mode='low'):
                 # c_filtered = signal.lfilter(b,a,c_mirrored, axis=0)
                 # c_filtered = signal.filtfilt(b,a,c_masked, axis=0, padtype='odd') # 'even'
                 c_filtered = c_filtered[len(c_masked):]
-                column_bg = column.copy()
-                column_bg[~mask] = c_filtered
-                tmp_bg[col,:] = column_bg
+                column_pert = column.copy()
+                column_pert[~mask] = c_filtered
+                pert[col,:] = column_pert
             else: # column of NANs is just passed through
-                tmp_bg[col,:] = column
-        tmp_pert = tmp_bg
+                pert[col,:] = column
 
-    return tmp_pert, tmp_bg
+        if mode=='high':
+            bg = data - pert
+
+    return pert, bg
 
 
 def interp_elev_to_z(data,elev,z):

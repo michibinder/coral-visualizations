@@ -35,8 +35,8 @@ plt.style.use('latex_default.mplstyle')
 
 """Config"""
 duration_threshold = 6
-content_folder = "era5-tropo"
-#content_folder = "era5-jet"
+#content_folder = "era5-tropo"
+content_folder = "era5-jet"
 PVU_z_levels = [3,4,5,6,7,8,9,10,11,12,13]
 
 def timelab_format_func(value, tick_number):

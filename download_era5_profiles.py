@@ -27,8 +27,11 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import warnings
 warnings.simplefilter("ignore", RuntimeWarning)
 
-import filter, cmaps, era5_processor
+import filter, cmaps, era5_processor, lidar_processor
 
+"""Config"""
+duration_threshold = 6
+reference_hour     = 15 # 15 for CORAL
 
 def download_era5_profiles(CONFIG_FILE):
     """Visualize lidar measurements (time-height diagrams + absolute temperature measurements)"""
@@ -43,73 +46,54 @@ def download_era5_profiles(CONFIG_FILE):
     else:
         obs_list = os.path.join(config.get("INPUT","OBS_FOLDER"), config.get("INPUT","OBS_FILE"))
     
-    config['GENERAL']['NTASKS'] = str(int(multiprocessing.cpu_count()-2))
+    config['GENERAL']['NCPUS'] = str(int(multiprocessing.cpu_count()-2))
     print("[i]   CPUs available: {}".format(multiprocessing.cpu_count()))
-    print("[i]   CPUs used: {}".format(config.get("GENERAL","NTASKS")))
+    print("[i]   CPUs used: {}".format(config.get("GENERAL","NCPUS")))
     print("[i]   Observations (without duration limit): {}".format(len(obs_list)))
 
     """Define ERA5 data folder"""
     config["OUTPUT"]["ERA5-FOLDER"] = os.path.join(config.get("OUTPUT","FOLDER"),"era5-profiles")
     os.makedirs(config.get("OUTPUT","ERA5-FOLDER"), exist_ok=True)
 
-    procs = []
-    sema = multiprocessing.Semaphore(config.getint("GENERAL","NTASKS"))
-    ii = 0
-    # - Start processes - #
+    running_procs = []
+    sema = multiprocessing.Semaphore(config.getint("GENERAL","NCPUS"))
     for ii, obs in enumerate(obs_list):
+        for p in running_procs[:]:
+            if not p.is_alive():
+                p.join()
+                running_procs.remove(p)
+
         sema.acquire()
         proc = multiprocessing.Process(target=download_and_interpolate_era5_data, args=(ii, config, obs, sema))
-        procs.append(proc)
-        proc.start()   
-
-    # - Complete processes - #
-    for proc in procs:
+        running_procs.append(proc)
+        proc.start()
+    
+    for proc in running_procs:
         proc.join()
-         
+
+    # args_list = []
+    # for ii, obs in enumerate(obs_list):
+    #     args = (ii, config, obs)
+    #     args_list.append(args)
+    
+    # with multiprocessing.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
+    #     pool.map(download_and_interpolate_era5_data, args_list)
+
 
 def download_and_interpolate_era5_data(ii,config,obs,sema):
+    # (ii,config,obs) = args_list
     file_name = os.path.split(obs)[-1]
+    ds = lidar_processor.open_and_decode_lidar_measurement(obs)
 
-    with xr.open_dataset(obs, decode_times=False) as ds:
-        """Decode time with time offset"""
-        # - Change from milliseconds to seconds - #
-        # ds.assign_coords({'time':ds.time.values / 1000})
-        ds.coords['time'] = ds.time.values / 1000
-        ds.integration_start_time.values = ds.integration_start_time.values / 1000
-        ds.integration_end_time.values = ds.integration_end_time.values / 1000
-        
-        # - Set reference date - #
-        ### Reference date is first reference
-        ### 'Time offset' is 'seconds' after reference date
-        ### Time is 'seconds' after time offset
-        unit_str = ds.time_offset.attrs['units']
-        ds.attrs['reference_date'] = unit_str[14:-6]
-        
-        # - Set reference date in units attribute - #
-        time_reference = datetime.datetime.strptime(ds.reference_date, '%Y-%m-%d %H:%M:%S.%f')
-        time_offset = datetime.timedelta(seconds=float(ds.time_offset.values[0]))
-        new_time_reference = time_reference + time_offset
-        time_reference_str = datetime.datetime.strftime(new_time_reference, '%Y-%m-%d %H:%M:%S')
-
-        ds.time.attrs['units'] = 'seconds since ' + time_reference_str
-        ds.integration_start_time.attrs['units'] = 'seconds since ' + time_reference_str
-        ds.integration_end_time.attrs['units'] = 'seconds since ' + time_reference_str
-        ds.time.attrs['resolution'] = "15"
-
-        ds = xr.decode_cf(ds, decode_coords = True, decode_times = True) 
-
-        """Define timeframe"""
-        # - Date for plotting should always refer to beginning of the plot (04:00 UTC) - #
-        start_date = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
-        duration   = datetime.datetime.utcfromtimestamp(ds.integration_end_time.values[-1].astype('O')/1e9) -  datetime.datetime.utcfromtimestamp(ds.integration_start_time.values[0].astype('O')/1e9)# for calendar
-        if config.get("GENERAL","TIMEFRAME_NIGHT") != "NONE":
-            reference_hour = 15 # 15 for CORAL
-            ## for TELMA its probably ok to get date of start and next date 
-            if (start_date.hour < reference_hour):
-                """Get previous day"""
-                start_date = start_date - datetime.timedelta(hours=24)
-
-    if duration > datetime.timedelta(hours=6):
+    """Define timeframe (decide which days to download ERA5 data)"""
+    ## For TELMA its probably ok to get date of start and next date (TIMEFRAME_NIGHT == 'NONE')
+    start_date = ds.start_time_utc
+    if config.get("GENERAL","TIMEFRAME_NIGHT") != "NONE":
+        if (ds.start_time_utc.hour < reference_hour):
+            """Get previous day"""
+            start_date = ds.start_time_utc - datetime.timedelta(hours=24)
+            
+    if ds.duration > datetime.timedelta(hours=duration_threshold):
         """Check if file already exists"""
         nc_file_name = file_name[:13]
         file_ml     = os.path.join(config.get("OUTPUT","ERA5-FOLDER"), nc_file_name + '-ml.nc')
