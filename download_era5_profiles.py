@@ -62,26 +62,15 @@ def download_era5_profiles(CONFIG_FILE):
             if not p.is_alive():
                 p.join()
                 running_procs.remove(p)
-
         sema.acquire()
         proc = multiprocessing.Process(target=download_and_interpolate_era5_data, args=(ii, config, obs, sema))
         running_procs.append(proc)
         proc.start()
-    
     for proc in running_procs:
         proc.join()
 
-    # args_list = []
-    # for ii, obs in enumerate(obs_list):
-    #     args = (ii, config, obs)
-    #     args_list.append(args)
-    
-    # with multiprocessing.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
-    #     pool.map(download_and_interpolate_era5_data, args_list)
-
 
 def download_and_interpolate_era5_data(ii,config,obs,sema):
-    # (ii,config,obs) = args_list
     file_name = os.path.split(obs)[-1]
     ds = lidar_processor.open_and_decode_lidar_measurement(obs)
 

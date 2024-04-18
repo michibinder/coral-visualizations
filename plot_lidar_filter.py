@@ -65,24 +65,19 @@ def plot_lidar_filter(CONFIG_FILE):
     print("[i]   CPUs used: {}".format(config.get("GENERAL","NCPUS")))
     print("[i]   Observations (without duration limit): {}".format(len(obs_list)))
     
-    procs = []
-    sema = multiprocessing.Semaphore(config.getint("GENERAL","NCPUS"))
-
+    args_list = []
     for ii, obs in enumerate(obs_list):
-        sema.acquire()
+        args = (ii, config, obs)
+        args_list.append(args)
+    
+    with multiprocessing.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
         if config.get("GENERAL","FILTERTYPE") == "filter-stacked":
-            proc = multiprocessing.Process(target=plot_lidar_stacked_filter, args=(ii, config, obs, sema))
-        else: # folder == "filter1D"
-            proc = multiprocessing.Process(target=plot_lidar_1D_filter, args=(ii, config, obs, sema))
-        procs.append(proc)
-        proc.start()   
-
-    # - Complete processes - #
-    for proc in procs:
-        proc.join()
+            pool.starmap(plot_lidar_stacked_filter, args_list)
+        else:
+            pool.starmap(plot_lidar_1D_filter, args_list)
 
 
-def plot_lidar_stacked_filter(ii,config,obs,sema):
+def plot_lidar_stacked_filter(ii,config,obs):
     file_name = os.path.split(obs)[-1]
     try:
         zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
@@ -300,10 +295,9 @@ def plot_lidar_stacked_filter(ii,config,obs,sema):
         print("Number of plotted measurements: {}".format(ii+1), end='\r')
     except:
         print("Plot failed for measurement: {}".format(file_name))
-    sema.release()
 
 
-def plot_lidar_1D_filter(ii,config,obs,sema):
+def plot_lidar_1D_filter(ii,config,obs):
     file_name = os.path.split(obs)[-1]
 
     zrange = eval(config.get("GENERAL","ALTITUDE_RANGE"))
@@ -498,7 +492,6 @@ def plot_lidar_1D_filter(ii,config,obs,sema):
     print("Number of plotted measurements: {}".format(ii+1), end='\r')
     # except:
     #     print("Plot failed for measurement: {}".format(file_name))
-    sema.release()
 
 
 if __name__ == '__main__':

@@ -71,7 +71,7 @@ def plot_lidar_tmp(CONFIG_FILE):
         args_list.append(args)
     
     with multiprocessing.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
-        pool.map(plot_lidar_tmp_standard, args_list)
+        pool.starmap(plot_lidar_tmp_standard, args_list)
 
     # running_procs = []
     # sema = multiprocessing.Semaphore(config.getint("GENERAL","NCPUS"))
@@ -80,12 +80,10 @@ def plot_lidar_tmp(CONFIG_FILE):
     #         if not p.is_alive():
     #             p.join()
     #             running_procs.remove(p)
-
     #     sema.acquire()
     #     proc = multiprocessing.Process(target=plot_lidar_tmp_standard, args=(ii, config, obs, sema))
     #     running_procs.append(proc)
     #     proc.start()
-    
     # for proc in running_procs:
     #     proc.join()
 
@@ -98,8 +96,8 @@ def plot_lidar_tmp(CONFIG_FILE):
     print(f"[i]  Visualizations completed in {time_str} hours.")
 
 
-def plot_lidar_tmp_standard(args_list):
-    (ii,config,obs) = args_list
+def plot_lidar_tmp_standard(ii,config,obs):
+    # (ii,config,obs) = args_list
     
     try:
         file_name = os.path.split(obs)[-1]
