@@ -94,7 +94,7 @@ def plot_lidar_data(CONFIG_FILE, filtertype, reset):
     config['GENERAL']['NCPUS']  = str(int(mp.cpu_count()-2))
     print(f"[i]  CPUs available: {mp.cpu_count()}")
     print(f"[i]  CPUs used: {config.get('GENERAL','NCPUS')}")
-    print(f"[i]  Observations (without duration limit): {pbar['ntasks']}")
+    print(f"[i]  Reset: {reset}, Number of measurements: {pbar['ntasks']}")
 
     with mp.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
 

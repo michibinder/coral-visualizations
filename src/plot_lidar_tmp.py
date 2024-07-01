@@ -59,7 +59,7 @@ def plot_lidar_tmp(config, obs, pbar):
 
     h_fmt      = mdates.DateFormatter('%H')
     hlocator   = mdates.HourLocator(byhour=range(0,24,2))
-    filter_str =["Temperature", "","T-$\bar{\text{T}}_{tmean}$"]
+    filter_str =["Temperature", "","T-$\\bar{T}_{tmean}$"]
     for k in [0,2]:
         ax_lid = axes[k,0]
         ax0    = axes[k,1]

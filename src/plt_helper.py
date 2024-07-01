@@ -52,6 +52,6 @@ def show_progress(progress_counter, lock, stime, total_tasks):
             print(f"[p]  |{hashtag_str}{minus_str}| Progress: {progress*100:05.2f}% - Elapsed: {int(elapsed_hrs):02d}:{int(elapsed_min):02d}:{int(elapsed_sec):02d} - ETA: {int(eta_hrs):02d}:{int(eta_min):02d}:{int(eta_sec):02d} (hh:mm:ss)", flush=True)
 
 def add_watermark(fig):
-    fig.text(0.25, 0.85, 'German Aerospace Center', style = 'italic', fontsize = 18, color = "grey", alpha=0.15, ha='center', va='center', rotation=30) 
-    fig.text(0.75, 0.2, 'German Aerospace Center', style = 'italic', fontsize = 18, color = "grey", alpha=0.15, ha='center', va='center', rotation=30) 
+    fig.text(0.25, 0.75, 'German Aerospace Center', style = 'italic', fontsize = 18, color = "grey", alpha=0.15, ha='center', va='center', rotation=30) 
+    fig.text(0.75, 0.25, 'German Aerospace Center', style = 'italic', fontsize = 18, color = "grey", alpha=0.15, ha='center', va='center', rotation=30) 
     return fig
