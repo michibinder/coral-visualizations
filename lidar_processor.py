@@ -9,6 +9,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import xarray as xr
+from tqdm import tqdm
 
 import filter
 
@@ -49,8 +50,14 @@ def open_and_decode_lidar_measurement(obs: str):
 
     ds = xr.decode_cf(ds, decode_coords = True, decode_times = True) 
 
-    ds.time.attrs['resolution']     = (ds.time.values[1]-ds.time.values[0]).astype('timedelta64[m]')
-    ds.altitude.attrs['resolution'] = ds.altitude.values[1]-ds.altitude.values[0]
+    if len(ds.time) > 1:
+        ds.time.attrs['resolution']     = (ds.time.values[1]-ds.time.values[0]).astype('timedelta64[m]')
+        ds.altitude.attrs['resolution'] = ds.altitude.values[1]-ds.altitude.values[0]
+    else:
+        print(f"[i]  No data available for: {obs.split('/')[-1]}")
+        # tqdm.write(f"[i]   No data available for: {obs.split('/')[-1]}")
+
+        return
 
     """Define timeframe"""
     # - Date for plotting should always refer to beginning of the plot (04:00 UTC) - #
@@ -59,11 +66,6 @@ def open_and_decode_lidar_measurement(obs: str):
     ds.attrs["start_time_utc"] = datetime.datetime.utcfromtimestamp(ds.time.values[0].astype('O')/1e9)
     ds.attrs["end_time_utc"]   = datetime.datetime.utcfromtimestamp(ds.time.values[-1].astype('O')/1e9)
     ds.attrs["duration"]       = ds.end_time_utc - ds.start_time_utc
-    return ds
-
-
-def process_lidar_measurement(config: dict, ds: object):
-    """Process lidar measurement (time decoding, altitude for plots, filter,...)"""
 
     """Compose duration string"""
     hours = ds.duration.seconds // 3600
@@ -79,6 +81,12 @@ def process_lidar_measurement(config: dict, ds: object):
     else:
         duration_str = duration_str + str(int(minutes))
     ds.attrs["duration_str"] = duration_str + 'min'
+    
+    return ds
+
+
+def process_lidar_measurement(config: dict, ds: object):
+    """Process lidar measurement (time decoding, altitude for plots, filter,...)"""
 
     """Define timeframe for plot"""
     if config.get("GENERAL","TIMEFRAME_NIGHT") != "NONE":
@@ -124,5 +132,28 @@ def process_lidar_measurement(config: dict, ds: object):
         ds['alt_plot'] = ds.altitude / 1000
     ds.attrs['vres'] = (ds['alt_plot'][1]-ds['alt_plot'][0]).values # in km
     ds.attrs['tres'] = (ds['time'][1]-ds['time'][0]).values.astype("timedelta64[m]").astype('int') # in minutes
+
+    return ds
+
+def calculate_primes(ds, temporal_cutoff, vertical_cutoff):
+    """Calculate temporal and vertical Butterworth filter"""
+
+    # - Vertical BW filter - #
+    tprime_vbwf, tbg_vbwf = filter.butterworth_filter(ds["temperature"].values, cutoff=1/vertical_cutoff, fs=1/ds.vres, order=5, mode='both')
+    ds["tprime_vbwf"] = (('t', 'z'), tprime_vbwf)
+    ds["tbg_vbwf"]    = (('t', 'z'), tbg_vbwf)
+
+    # - Temporal BW filter (Interpolate data gaps and remove again later) - #
+    ds["temperature_interp"] = ds.temperature.interpolate_na(dim='time', method='linear', limit=None, use_coordinate='time', max_gap=None)
+    tprime_tbwf, tbg_tbwf = filter.butterworth_filter(ds["temperature_interp"].values.T, cutoff=1/temporal_cutoff, fs=1/ds.tres, order=5, mode='both')
+    tprime_tbwf = tprime_tbwf.T
+    tbg_tbwf    = tbg_tbwf.T
+    tprime_tbwf  = np.where(~np.isnan(ds.temperature.values), tprime_tbwf, np.nan) 
+    tbg_tbwf     = np.where(~np.isnan(ds.temperature.values), tbg_tbwf, np.nan) 
+    ds["tprime_tbwf"] = (('t', 'z'), tprime_tbwf)
+    ds["tbg_tbwf"]    = (('t', 'z'), tbg_tbwf)
+
+    # - Subtract nightly mean - #
+    ds["tprime_nm"]  = (ds["temperature"]-ds["temperature"].mean(dim='time'))
 
     return ds

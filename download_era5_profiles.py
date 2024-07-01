@@ -46,7 +46,8 @@ def download_era5_profiles(CONFIG_FILE):
     else:
         obs_list = os.path.join(config.get("INPUT","OBS_FOLDER"), config.get("INPUT","OBS_FILE"))
     
-    config['GENERAL']['NCPUS'] = str(int(multiprocessing.cpu_count()-2))
+    # config['GENERAL']['NCPUS'] = str(int(multiprocessing.cpu_count()-2))
+    config['GENERAL']['NCPUS'] = "4"
     print("[i]   CPUs available: {}".format(multiprocessing.cpu_count()))
     print("[i]   CPUs used: {}".format(config.get("GENERAL","NCPUS")))
     print("[i]   Observations (without duration limit): {}".format(len(obs_list)))
@@ -73,6 +74,9 @@ def download_era5_profiles(CONFIG_FILE):
 def download_and_interpolate_era5_data(ii,config,obs,sema):
     file_name = os.path.split(obs)[-1]
     ds = lidar_processor.open_and_decode_lidar_measurement(obs)
+    if ds is None:
+        sema.release()
+        return
 
     """Define timeframe (decide which days to download ERA5 data)"""
     ## For TELMA its probably ok to get date of start and next date (TIMEFRAME_NIGHT == 'NONE')
@@ -98,7 +102,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
 
             if not os.path.exists(file_ml):
                 # - Request model level data - #
-                print("[i][{}]   Retrieving full model level data...".format(ii))
+                print(f"[i][{ii}]   Retrieving full model level data...")
                 c.retrieve('reanalysis-era5-complete', {
                     'class'   : 'ea',
                     'date'    : DATE,
@@ -117,7 +121,7 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                 }, file_ml)
 
             if not os.path.exists(file_ml_T21):
-                print("[i][{}]   Retrieving T21 model level data...".format(ii))
+                print(f"[i][{ii}]   Retrieving T21 model level data...")
                 # - Request model level data - #
                 c.retrieve('reanalysis-era5-complete', {
                     'class'   : 'ea',
@@ -137,13 +141,13 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                 }, file_ml_T21)
 
             file_ml_coeff = 'input/era5-ml-coeff.csv'
-            print("[i][{}]   Interpolating model levels...".format(ii))
+            print(f"[i][{ii}]   Interpolating model levels...")
             era5_processor.prepare_interpolated_ml_ds(file_ml,file_ml_T21,file_ml_coeff,file_ml_int)
             os.remove(file_ml)
             os.remove(file_ml_T21)                
-        print("[i][{}]   ERA5 data prepared for observation: {}".format(ii,obs))
+        print(f"[i][{ii}]   ERA5 data prepared for observation: {obs}")
     else:
-        print("[i][{}]   Duration below limit for observation: {}".format(ii,obs))
+        print(f"[i][{ii}]   Duration below limit for observation: {obs}")
     sema.release()
 
 if __name__ == '__main__':
