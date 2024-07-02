@@ -28,8 +28,8 @@ import warnings
 warnings.simplefilter("ignore", RuntimeWarning)
 
 import filter, cmaps, lidar_processor, plt_helper
-from plot_lidar_1Dfilter import plot_lidar_1Dfilter
-from plot_lidar_stacked_filter import plot_lidar_stacked_filter
+from plot_lidar_filt_1D import plot_lidar_filt_1D
+from plot_lidar_filt_stacked import plot_lidar_filt_stacked
 from plot_lidar_tmp import plot_lidar_tmp
 
 plt.style.use('latex_default.mplstyle')
@@ -37,20 +37,8 @@ plt.style.use('latex_default.mplstyle')
 """Config"""
 VERTICAL_CUTOFF = 15 # km (LAMBDA_CUT)
 
-# def fwrapper(arg):
-#     config = arg[0]
-#     if config.get("GENERAL","FILTERTYPE") == "filter-stacked":
-#         return plot_lidar_stacked_filter(*arg)
-#     elif config.get("GENERAL","FILTERTYPE") == "filter1D":
-#         return plot_lidar_1D_filter(*arg)
-#     else:
-#         return plot_lidar_tmp(*arg)
 
-# def initpool(progress_counter_):
-#     global progress_counter
-#     progress_counter = progress_counter_
-
-def plot_lidar_data(CONFIG_FILE, filtertype, reset):
+def plot_lidar_data(CONFIG_FILE, content, reset):
     """Visualize lidar measurements (time-height diagrams + absolute temperature measurements)"""
     
     """Settings"""
@@ -64,12 +52,11 @@ def plot_lidar_data(CONFIG_FILE, filtertype, reset):
     
     config["INPUT"]["ERA5-FOLDER"] = os.path.join(config.get("OUTPUT","FOLDER"),"era5-profiles")
 
-    #FILTERTYPE      = "stacked_filter"
-    #FILTERTYPE      = "1Dfilter"
-    #FILTERTYPE      = "tmp"
-    config["GENERAL"]["FILTERTYPE"] = filtertype
-    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","FILTERTYPE")), exist_ok=True)
-    fig_list = sorted(glob.glob(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","FILTERTYPE"),"*.png")))
+    config["GENERAL"]["CONTENT"] = content
+    if reset:
+        shutil.rmtree(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","CONTENT")), ignore_errors=True)
+    os.makedirs(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","CONTENT")), exist_ok=True)
+    fig_list = sorted(glob.glob(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","CONTENT"),"*.png")))
     fig_list = [fig_path.split("/")[-1] for fig_path in fig_list]
 
     progress_counter = mp.Manager().Value('i', 0)
@@ -98,10 +85,10 @@ def plot_lidar_data(CONFIG_FILE, filtertype, reset):
 
     with mp.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
 
-        if config.get("GENERAL","FILTERTYPE") == "stacked_filter":
-            results = pool.starmap(plot_lidar_stacked_filter, args_list)
-        elif config.get("GENERAL","FILTERTYPE") == "1Dfilter":
-            pool.starmap(plot_lidar_1Dfilter, args_list)
+        if config.get("GENERAL","CONTENT") == "filt-stacked":
+            results = pool.starmap(plot_lidar_filt_stacked, args_list)
+        elif config.get("GENERAL","CONTENT") == "filt-1D":
+            pool.starmap(plot_lidar_filt_1D, args_list)
         else:
             pool.starmap(plot_lidar_tmp, args_list)
     
@@ -133,11 +120,11 @@ if __name__ == '__main__':
     except:
         print('[i]  Working directory already set!')
     
-    filtertype = sys.argv[2]
+    content = sys.argv[2]
     # tmp, 1Dfilter, stacked_filter
     
     reset = False
     if len(sys.argv) > 3:
         if sys.argv[3].lower().capitalize() == "True":
             reset = True
-    plot_lidar_data(sys.argv[1], filtertype, reset)
+    plot_lidar_data(sys.argv[1], content, reset)

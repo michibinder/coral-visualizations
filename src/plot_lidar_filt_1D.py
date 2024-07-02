@@ -33,7 +33,7 @@ plt.style.use('latex_default.mplstyle')
 VERTICAL_CUTOFF = 15 # km (LAMBDA_CUT)
 TEMPORAL_CUTOFF = 8*60 # min (TAU_CUT)
 
-def plot_lidar_1Dfilter(config, obs, pbar):
+def plot_lidar_filt_1D(config, obs, pbar):
     """Plot lidar data with vertical BW and temporal BW filter (only one filter applied for each plot)."""
 
     file_name = os.path.split(obs)[-1]
@@ -262,7 +262,7 @@ def plot_lidar_1Dfilter(config, obs, pbar):
 
     """Save figure"""
     fig_name = file_name[:14] + ds.duration_str + '.png'
-    fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","FILTERTYPE"),fig_name), 
+    fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","CONTENT"),fig_name), 
                 facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
 
     """Finish"""

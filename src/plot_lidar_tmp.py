@@ -165,7 +165,7 @@ def plot_lidar_tmp(config, obs, pbar):
     
     """Save figure"""
     fig_name = file_name[:14] + ds.duration_str + '.png'
-    fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","FILTERTYPE"),fig_name), facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
+    fig.savefig(os.path.join(config.get("OUTPUT","FOLDER"),config.get("GENERAL","CONTENT"),fig_name), facecolor='w', edgecolor='w', format='png', dpi=150, bbox_inches='tight') # orientation='portrait'
 
     """Finish"""
     plt_helper.show_progress(pbar['progress_counter'], pbar['lock'], pbar["stime"], pbar['ntasks'])
