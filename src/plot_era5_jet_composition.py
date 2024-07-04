@@ -228,10 +228,13 @@ def plot_era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, ds_saamer
         if j==2:
             ax_tpj.contour(ds_pv.longitude_plot, ds_pv.latitude, ds_pv['z'].sel(level=met_level)[t,:,:]/g, colors='dimgray', levels=geop_levels, linewidths=lw_wind)
             contf_wind = ax_tpj.contourf(ds_pv.longitude_plot, ds_pv.latitude, ds_pv['u_horiz'].sel(level=met_level)[t,:,:], cmap=cmap, norm=norm, levels=wind_levels,extend='both')
+            ax_tpj.contour(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level1), colors=clev_colors, levels=clev_lin, linewidths=lw_medium, extend='both')
         else:
+            # ax_tpj.contourf(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['u_horiz'].sel(level=tmp_level1)[t,:,:], cmap=cmap_vert, norm=norm_vert, levels=wind_levels_vert,extend='both')
+            # ax_tpj.contour(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level1), colors=clev_colors, levels=clev_lin, linewidths=lw_medium, extend='both')
+            ax_tpj.contourf(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level1), levels=clev, cmap=cmap_st, norm=norm_st, extend='both')
             ax_tpj.contour(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['p'].sel(level=tmp_level1)[t,:,:],colors='dimgray', levels=pressure_levels, linewidths=lw_wind)
-            ax_tpj.contourf(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['u_horiz'].sel(level=tmp_level1)[t,:,:], cmap=cmap_vert, norm=norm_vert, levels=wind_levels_vert,extend='both')
-        ax_tpj.contour(ds_ml.longitude_plot,  ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level1), colors=clev_colors, levels=clev_lin, linewidths=lw_medium, extend='both')
+
 
         ax_tpj.axhline(lat, color='black', ls='--', lw=lw_cut)
         ax_tpj.axvline(lon, color='black', ls='--', lw=lw_cut)
@@ -244,9 +247,10 @@ def plot_era5_jet_composition(config, vars, ds, ds_ml, ds_pv, ds_2pvu, ds_saamer
             gls.bottom_labels=False
 
         # --- JET (right side) --- #
-        cont_p   = ax_jet.contour(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['p'].sel(level=tmp_level2)[t,:,:],colors='dimgray', levels=pressure_levels, linewidths=lw_wind)
-        ax_jet.contourf(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['u_horiz'].sel(level=tmp_level2)[t,:,:], cmap=cmap_vert, norm=norm_vert, levels=wind_levels_vert,extend='both')
-        ax_jet.contour(ds_ml.longitude_plot,  ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level2), colors=clev_colors, levels=clev_lin, linewidths=lw_medium, extend='both')
+        # ax_jet.contourf(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['u_horiz'].sel(level=tmp_level2)[t,:,:], cmap=cmap_vert, norm=norm_vert, levels=wind_levels_vert,extend='both')
+        # ax_jet.contour(ds_ml.longitude_plot,  ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level2), colors=clev_colors, levels=clev_lin, linewidths=lw_medium, extend='both')
+        ax_jet.contourf(ds_ml.longitude_plot,  ds_ml.latitude, ds_ml['tprime'][t,:,:,:].sel(level=tmp_level2), levels=clev, cmap=cmap_st, norm=norm_st, extend='both')
+        ax_jet.contour(ds_ml.longitude_plot, ds_ml.latitude, ds_ml['p'].sel(level=tmp_level2)[t,:,:],colors='dimgray', levels=pressure_levels, linewidths=lw_wind)
 
         ax_jet.axhline(lat-5, color='black', ls='--', lw=lw_cut)
 

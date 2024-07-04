@@ -25,9 +25,11 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 ## import imageio
 import imageio.v2 as imageio
-
+import logging
 import warnings
 warnings.simplefilter("ignore", RuntimeWarning)
+warnings.filterwarnings('ignore', category=UserWarning, module='imageio_ffmpeg')
+logging.getLogger('imageio_ffmpeg').setLevel(logging.ERROR)
 
 import filter, cmaps, era5_processor, lidar_processor, plt_helper
 from plot_era5_tropopause_composition import plot_era5_tropopause_composition
@@ -97,14 +99,34 @@ def prepare_era5_composition(config_file, content, reset):
             args_list.append(args)
 
     pbar['ntasks'] = len(args_list)
-    config['GENERAL']['NCPUS'] = str(int(mp.cpu_count()-2))
+    config['GENERAL']['NCPUS'] = str(int(mp.cpu_count()-6))
     # config['GENERAL']['NCPUS'] = "1"
     print(f"[i]  CPUs available: {mp.cpu_count()}")
     print(f"[i]  CPUs used: {config.get('GENERAL','NCPUS')}")
     print(f"[i]  Distributed tasks (observations with regional ERA5 data): {pbar['ntasks']}")
 
+    #### Parallelize internally ##### 
+    # for args in args_list:
+    #     plot_era5_composition(*args)
+
+    #### Parallelize starmap ####
     with mp.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
         pool.starmap(plot_era5_composition, args_list)
+
+    #### Parallelize with Process ####
+    # pbar['sema'] = mp.Semaphore(config.getint("GENERAL","NCPUS"))
+    # running_procs = []
+    # for args in args_list:
+    #     for p in running_procs[:]:
+    #         if not p.is_alive():
+    #             p.join()
+    #             running_procs.remove(p)
+    #     pbar['sema'].acquire()
+    #     proc = mp.Process(target=plot_era5_composition, args=args)
+    #     running_procs.append(proc)
+    #     proc.start()
+    # for proc in running_procs:
+    #     proc.join()
 
 
 def plot_era5_composition(config, obs, pbar):
@@ -189,7 +211,12 @@ def plot_era5_composition(config, obs, pbar):
             # plot_era5_jet_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, ds_saamer, tstep)
             for tstep in range(np.shape(ds_ml['t'])[0]):
                 plot_era5_jet_composition(config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, ds_saamer, tstep)
-                print("Plot: {}".format(tstep), end="\r")
+            # args_list = [] 
+            # for tstep in range(np.shape(ds_ml['t'])[0]):
+            #     args = (config, preprocessed_vars, ds, ds_ml, ds_pv, ds_2pvu, ds_saamer, tstep)
+            #     args_list.append(args)
+            # with mp.Pool(processes=config.getint("GENERAL","NCPUS")) as pool:
+            #     pool.starmap(plot_era5_jet_composition, args_list)
 
         """Closing files and generating animation"""
         ds.close()
@@ -202,6 +229,7 @@ def plot_era5_composition(config, obs, pbar):
 
     """Finish"""
     plt_helper.show_progress(pbar['progress_counter'], pbar['lock'], pbar["stime"], pbar['ntasks'])
+    # pbar['sema'].release()
 
 
 # ----------------------------------- SUBROUTINES ----------------------------------- #
@@ -275,15 +303,15 @@ def create_animation(png_folder, output_path):
     macro_block_size = 16 # Default is 16 for optimal compatibility
 
     # Increase the probesize to give FFmpeg more data to estimate the rate
-    # writer_options = {'ffmpeg_params': ['-probesize', '10000000']}  # Increase probesize to 5MB
-    writer_options = {'ffmpeg_params': ['-probesize', '5000000', '-analyzeduration', '5000000']}
+    writer_options = {'ffmpeg_params': ['-probesize', '100M']}  # Increase probesize to 5MB
+    # writer_options = {'ffmpeg_params': ['-probesize', '5000000', '-analyzeduration', '5000000']}
 
     with imageio.get_writer(output_path, fps=fps, macro_block_size=macro_block_size, **writer_options) as writer:
         for filename in filenames:
             if filename.endswith(".png"):
                 image = imageio.imread(os.path.join(png_folder, filename))
-                resized_image = resize_to_macro_block(image, macro_block_size)
-                writer.append_data(resized_image)
+                image = resize_to_macro_block(image, macro_block_size)
+                writer.append_data(image)
     # imageio.mimsave(image_folder + "/era5_sequence.gif", images, duration=1/fps, palettesize=256/2)  # loop=0, quantizer="nq", palettesize=256
 
 

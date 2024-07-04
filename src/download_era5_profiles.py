@@ -140,9 +140,8 @@ def download_and_interpolate_era5_data(ii,config,obs,sema):
                     'truncation' : '21' # 'av', '639', '21', T1279
                 }, file_ml_T21)
 
-            file_ml_coeff = 'input/era5-ml-coeff.csv'
             print(f"[i][{ii}]   Interpolating model levels...")
-            era5_processor.prepare_interpolated_ml_ds(file_ml,file_ml_T21,file_ml_coeff,file_ml_int)
+            era5_processor.prepare_interpolated_ml_ds(file_ml,file_ml_T21,file_ml_int)
             os.remove(file_ml)
             os.remove(file_ml_T21)                
         print(f"[i][{ii}]   ERA5 data prepared for observation: {obs}")
